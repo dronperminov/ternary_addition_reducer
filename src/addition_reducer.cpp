@@ -1,6 +1,6 @@
 #include "addition_reducer.h"
 
-AdditionReducer::AdditionReducer() {
+AdditionReducer::AdditionReducer() : uniformDistribution(0.0, 1.0), boolDistribution(0, 1), modeDistribution(0, MIX_MODE - 1) {
     realVariables = 0;
     naiveAdditions = 0;
     maxCount = 0;
@@ -38,6 +38,7 @@ void AdditionReducer::setMode(int mode) {
     this->mode = mode;
     this->scale = -1;
     this->alpha = -1;
+    this->beta = -1;
 }
 
 void AdditionReducer::partialInitialize(const AdditionReducer &reducer, size_t count) {
@@ -58,16 +59,15 @@ void AdditionReducer::copyFrom(const AdditionReducer &reducer) {
 }
 
 void AdditionReducer::reduce(std::mt19937 &generator) {
-    std::uniform_real_distribution<double> uniform(0.0, 0.5);
+    scale = uniformDistribution(generator) * 0.5;
+    alpha = -1 + uniformDistribution(generator) * 2;
+    beta = 0.5 + uniformDistribution(generator) * 0.5;
 
-    if (scale < 0)
-        scale = uniform(generator);
-
-    if (alpha < 0)
-        alpha = 0.5 + uniform(generator);
+    std::uniform_int_distribution<int> modeDistribution(0, MIX_MODE - 1);
 
     while (updateSubexpressions()) {
-        std::pair<int, int> subexpression = selectSubexpression(generator);
+        int stepMode = mode == MIX_MODE ? modeDistribution(generator) : mode;
+        std::pair<int, int> subexpression = selectSubexpression(stepMode, generator);
         replaceSubexpression(subexpression);
     }
 }
@@ -104,6 +104,9 @@ std::string AdditionReducer::getMode() const {
 
     if (mode == WEIGHTED_RANDOM_MODE)
         return "wr";
+
+    if (mode == GREEDY_POTENTIAL_MODE)
+        return "gp" + std::to_string(int(scale * 100));;
 
     return "mix";
 }
@@ -189,7 +192,7 @@ void AdditionReducer::canonizeSubexpression(int &i, int &j) const {
     }
 }
 
-std::pair<int, int> AdditionReducer::selectSubexpression(std::mt19937 &generator) const {
+std::pair<int, int> AdditionReducer::selectSubexpression(int mode, std::mt19937 &generator) {
     if (mode == GREEDY_MODE)
         return selectSubexpressionGreedy();
 
@@ -205,10 +208,13 @@ std::pair<int, int> AdditionReducer::selectSubexpression(std::mt19937 &generator
     if (mode == WEIGHTED_RANDOM_MODE)
         return selectSubexpressionWeightedRandom(generator);
 
+    if (mode == GREEDY_POTENTIAL_MODE)
+        return selectSubexpressionGreedyPotential(generator);
+
     return selectSubexpressionGreedy();
 }
 
-std::pair<int, int> AdditionReducer::selectSubexpressionGreedy() const {
+std::pair<int, int> AdditionReducer::selectSubexpressionGreedy() {
     auto it = subexpressions.begin();
 
     while (it != subexpressions.end() && it->second != maxCount)
@@ -217,7 +223,7 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedy() const {
     return it->first;
 }
 
-std::pair<int, int> AdditionReducer::selectSubexpressionGreedyAlternative(std::mt19937 &generator) const {
+std::pair<int, int> AdditionReducer::selectSubexpressionGreedyAlternative(std::mt19937 &generator) {
     std::vector<std::pair<int, int>> top;
 
     for (auto it = subexpressions.begin(); it != subexpressions.end(); it++)
@@ -228,7 +234,7 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyAlternative(std::m
     return top[dist(generator)];
 }
 
-std::pair<int, int> AdditionReducer::selectSubexpressionGreedyRandom(std::mt19937 &generator) const {
+std::pair<int, int> AdditionReducer::selectSubexpressionGreedyRandom(std::mt19937 &generator) {
     std::uniform_real_distribution<double> uniform(0.0, 0.5);
     bool top = uniform(generator) < scale;
 
@@ -242,7 +248,7 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyRandom(std::mt1993
     return pairs[dist(generator)];
 }
 
-std::pair<int, int> AdditionReducer::selectSubexpressionGreedyIntersections(std::mt19937 &generator) const {
+std::pair<int, int> AdditionReducer::selectSubexpressionGreedyIntersections(std::mt19937 &generator) {
     std::vector<std::pair<int, int>> pairs;
     pairs.reserve(subexpressions.size());
 
@@ -254,39 +260,35 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyIntersections(std:
     std::vector<bool> intersections(size * size, false);
 
     for (int i = 0; i < size; i++) {
-        int i1 = pairs[i].first;
-        int j1 = pairs[i].second;
-
         for (int j = i + 1; j < size; j++) {
-            int i2 = pairs[j].first;
-            int j2 = pairs[j].second;
-            bool intersects = i1 == i2 || i1 == abs(j2) || abs(j1) == i2 || abs(j1) == abs(j2); 
+            bool intersects = isIntersects(pairs[i], pairs[j]);
+
+            if (boolDistribution(generator))
+                intersects = !intersects;
+
             intersections[i * size + j] = intersects;
             intersections[j * size + i] = intersects;
         }
     }
 
-    int maxScore = 0;
+    double maxScore = 0;
     int imax = 0;
-    std::uniform_int_distribution<int> boolDist(0, 1);
 
     for (int i = 0; i < size; i++) {
-        double intersectionsScore = 0;
+        int overlapped = 0;
+        int other = 0;
 
         for (int j = 0; j < size; j++) {
             if (i == j)
                 continue;
 
-            if (intersections[i * size + j]) {
-                intersectionsScore += boolDist(generator) ? 0 : alpha * (subexpressions.at(pairs[j]) - 1);
-            }
-            else {
-                // intersectionsScore += boolDist(generator) ? 0 : (1 - alpha) * (subexpressions.at(pairs[j]) - 1);
-                intersectionsScore += subexpressions.at(pairs[j]) - 1;
-            }
+            if (intersections[i * size + j])
+                overlapped += subexpressions.at(pairs[j]) - 1;
+            else
+                other += subexpressions.at(pairs[j]) - 1;
         }
 
-        int score = subexpressions.at(pairs[i]) - 1 + scale * intersectionsScore;
+        double score = subexpressions.at(pairs[i]) - 1 + scale * (other + alpha + overlapped * beta);
 
         if (score > maxScore) {
             maxScore = score;
@@ -297,7 +299,68 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyIntersections(std:
     return pairs[imax];
 }
 
-std::pair<int, int> AdditionReducer::selectSubexpressionWeightedRandom(std::mt19937 &generator) const {
+std::pair<int, int> AdditionReducer::selectSubexpressionGreedyPotential(std::mt19937 &generator) {
+    double maxScore = 0;
+    std::pair<int, int> best = {0, 0};
+    int varIndex = realVariables + freshVariables.size() + 1;
+
+    for (auto it = subexpressions.begin(); it != subexpressions.end(); it++) {
+        if (it->second == 1)
+            continue;
+
+        std::pair<int, int> pair = it->first;
+        int i = pair.first;
+        int j = pair.second;
+
+        std::unordered_set<std::pair<int, int>, PairHash> potentialSubexpressions;
+        int potential = 0;
+
+        for (size_t index = 0; index < expressions.size(); index++) {
+            auto end = expressions[index].end();
+            int sign = 0;
+
+            if (expressions[index].find(i) != end && expressions[index].find(j) != end) {
+                expressions[index].erase(i);
+                expressions[index].erase(j);
+                expressions[index].insert(varIndex);
+                sign = 1;
+            }
+            else if (expressions[index].find(-i) != end && expressions[index].find(-j) != end) {
+                expressions[index].erase(-i);
+                expressions[index].erase(-j);
+                expressions[index].insert(-varIndex);
+                sign = -1;
+            }
+
+            for (auto it1 = expressions[index].begin(); it1 != expressions[index].end(); it1++) {
+                for (auto it2 = std::next(it1); it2 != expressions[index].end(); it2++) {
+                    int si = *it1;
+                    int sj = *it2;
+                    canonizeSubexpression(si, sj);
+                    potentialSubexpressions.insert({si, sj});
+                    potential++;
+                }
+            }
+
+            if (sign) {
+                expressions[index].insert(i * sign);
+                expressions[index].insert(j * sign);
+                expressions[index].erase(varIndex * sign);
+            }
+        }
+
+        double score = it->second - 1 + scale * (potential - potentialSubexpressions.size());
+
+        if (score > maxScore) {
+            maxScore = score;
+            best = pair;
+        }
+    }
+
+    return best;
+}
+
+std::pair<int, int> AdditionReducer::selectSubexpressionWeightedRandom(std::mt19937 &generator) {
     double total = 0;
 
     for (auto it = subexpressions.begin(); it != subexpressions.end(); it++)
@@ -318,28 +381,19 @@ std::pair<int, int> AdditionReducer::selectSubexpressionWeightedRandom(std::mt19
 
 
 void AdditionReducer::replaceSubexpression(const std::pair<int, int> &subexpression) {
-    subexpressions.erase(subexpression);
-
     int varIndex = realVariables + freshVariables.size() + 1;
     int i = subexpression.first;
     int j = subexpression.second;
 
     for (size_t index = 0; index < expressions.size(); index++) {
-        auto end = expressions[index].end(); 
-        auto it = expressions[index].find(i);
-        auto jt = expressions[index].find(j);
+        auto end = expressions[index].end();
 
-        if (it != end && jt != end) {
+        if (expressions[index].find(i) != end && expressions[index].find(j) != end) {
             expressions[index].erase(i);
             expressions[index].erase(j);
             expressions[index].insert(varIndex);
-            continue;
         }
-
-        it = expressions[index].find(-i);
-        jt = expressions[index].find(-j);
-
-        if (it != end && jt != end) {
+        else if (expressions[index].find(-i) != end && expressions[index].find(-j) != end) {
             expressions[index].erase(-i);
             expressions[index].erase(-j);
             expressions[index].insert(-varIndex);
@@ -347,4 +401,14 @@ void AdditionReducer::replaceSubexpression(const std::pair<int, int> &subexpress
     }
 
     freshVariables.push_back({i, j});
+}
+
+bool AdditionReducer::isIntersects(const std::pair<int, int> pair1, const std::pair<int, int> &pair2) const {
+    int i1 = pair1.first;
+    int j1 = pair1.second;
+
+    int i2 = pair2.first;
+    int j2 = pair2.second;
+
+    return i1 == i2 || i1 == abs(j2) || abs(j1) == i2 || j1 == j2;
 }

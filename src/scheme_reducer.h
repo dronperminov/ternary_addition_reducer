@@ -18,6 +18,9 @@ const int modes[] = {
     GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE,
     GREEDY_ALTERNATIVE_MODE, GREEDY_ALTERNATIVE_MODE, GREEDY_ALTERNATIVE_MODE, GREEDY_ALTERNATIVE_MODE,
     GREEDY_RANDOM_MODE, GREEDY_RANDOM_MODE,
+    WEIGHTED_RANDOM_MODE,
+    GREEDY_POTENTIAL_MODE,
+    MIX_MODE
 };
 
 const int modesCount = sizeof(modes) / sizeof(modes[0]);
@@ -38,14 +41,17 @@ class SchemeReducer {
 
     int reducedAdditions;
     int reducedFreshVars;
+
+    std::uniform_real_distribution<double> uniformDistribution;
+    std::uniform_int_distribution<int> modeDistribution;
 public:
     SchemeReducer(int count, const std::string path, int seed);
 
     bool initialize(std::istream &is);
-    void reduce(int maxNoImprovements, int startAdditions, int topCount = 10);
+    void reduce(int maxNoImprovements, int startAdditions, double partialInitializationRate, int topCount = 10);
 private:
-    void parseScheme(const Scheme &scheme);
-    void reduceIteration();
+    bool parseScheme(const Scheme &scheme);
+    void reduceIteration(double partialInitializationRate);
     bool updateBest(int index, int topCount);
     bool update(int startAdditions, int topCount);
     void report(std::chrono::high_resolution_clock::time_point startTime, int iteration, const std::vector<double> &elapsedTimes, int topCount);

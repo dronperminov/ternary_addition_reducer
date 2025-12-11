@@ -1,6 +1,6 @@
 #include "scheme_reducer.h"
 
-SchemeReducer::SchemeReducer(int count, const std::string path, int seed) {
+SchemeReducer::SchemeReducer(int count, const std::string path, int seed) : uniformDistribution(0.0, 1.0), modeDistribution(0, modesCount - 1) {
     this->count = count;
     this->path = path;
 
@@ -27,7 +27,12 @@ bool SchemeReducer::initialize(std::istream &is) {
         return false;
     }
 
-    parseScheme(scheme);
+    if (!parseScheme(scheme)) {
+        std::cout << "error, readed scheme has non ternary coefficients" << std::endl;
+        return false;
+    }
+
+    std::cout << "success" << std::endl << std::endl;
 
     #pragma omp parallel for
     for (int i = 0; i < 3; i++) {
@@ -47,7 +52,7 @@ bool SchemeReducer::initialize(std::istream &is) {
     return true;
 }
 
-void SchemeReducer::reduce(int maxNoImprovements, int startAdditions, int topCount) {
+void SchemeReducer::reduce(int maxNoImprovements, int startAdditions, double partialInitializationRate, int topCount) {
     int noImprovements = 0;
 
     auto startTime = std::chrono::high_resolution_clock::now();
@@ -56,7 +61,7 @@ void SchemeReducer::reduce(int maxNoImprovements, int startAdditions, int topCou
 
     for (int iteration = 1; noImprovements < maxNoImprovements; iteration++) {
         auto t1 = std::chrono::high_resolution_clock::now();
-        reduceIteration();
+        reduceIteration(partialInitializationRate);
         bool improved = update(startAdditions, topCount);
         auto t2 = std::chrono::high_resolution_clock::now();
 
@@ -73,7 +78,7 @@ void SchemeReducer::reduce(int maxNoImprovements, int startAdditions, int topCou
     }
 }
 
-void SchemeReducer::parseScheme(const Scheme &scheme) {
+bool SchemeReducer::parseScheme(const Scheme &scheme) {
     for (int i = 0; i < 3; i++)
         dimension[i] = scheme.dimension[i];
 
@@ -85,7 +90,8 @@ void SchemeReducer::parseScheme(const Scheme &scheme) {
         for (int j = 0; j < scheme.elements[0]; j++)
             expression[j] = scheme.uvw[0][i * scheme.elements[0] + j];
 
-        uvw[0][count].addExpression(expression);
+        if (!uvw[0][count].addExpression(expression))
+            return false;
     }
 
     for (int i = 0; i < scheme.rank; i++) {
@@ -94,7 +100,8 @@ void SchemeReducer::parseScheme(const Scheme &scheme) {
         for (int j = 0; j < scheme.elements[1]; j++)
             expression[j] = scheme.uvw[1][i * scheme.elements[1] + j];
 
-        uvw[1][count].addExpression(expression);
+        if (!uvw[1][count].addExpression(expression))
+            return false;
     }
 
     for (int i = 0; i < scheme.elements[2]; i++) {
@@ -103,24 +110,25 @@ void SchemeReducer::parseScheme(const Scheme &scheme) {
         for (int j = 0; j < scheme.rank; j++)
             expression[j] = scheme.uvw[2][j * scheme.elements[2] + i];
 
-        uvw[2][count].addExpression(expression);
+        if (!uvw[2][count].addExpression(expression))
+            return false;
     }
+
+    return true;
 }
 
-void SchemeReducer::reduceIteration() {
+void SchemeReducer::reduceIteration(double partialInitializationRate) {
     #pragma omp parallel for
     for (int i = 0; i < count; i++) {
         auto& generator = generators[omp_get_thread_num()];
-        std::uniform_int_distribution<int> modeDist(0, modesCount - 1);
-        std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
         for (int j = 0; j < 3; j++) {
             uvw[j][i].copyFrom(uvw[j][count]);
-            uvw[j][i].setMode(modes[modeDist(generator)]);
+            uvw[j][i].setMode(modes[modeDistribution(generator)]);
 
-            if (uniform(generator) < 0.3 && best[j].getFreshVars() > 0) {
-                std::uniform_int_distribution<int> varsDist(1, best[j].getFreshVars() * 3 / 4);
-                uvw[j][i].partialInitialize(best[j], varsDist(generator));
+            if (uniformDistribution(generator) < partialInitializationRate && best[j].getFreshVars() > 0) {
+                std::uniform_int_distribution<int> varsDistribution(1, best[j].getFreshVars() * 3 / 4);
+                uvw[j][i].partialInitialize(best[j], varsDistribution(generator));
             }
 
             uvw[j][i].reduce(generator);
