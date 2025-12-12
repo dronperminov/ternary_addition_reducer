@@ -14,17 +14,6 @@
 #include "scheme.h"
 #include "addition_reducer.h"
 
-struct StrategyWeights {
-    double greedyAlternative;
-    double greedyRandom;
-    double weightedRandom;
-    double greedyIntersections;
-    double greedyPotential;
-    double mix;
-
-    double getTotal() const;
-};
-
 class SchemeReducer {
     int dimension[3];
     int rank;

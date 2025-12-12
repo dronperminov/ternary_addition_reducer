@@ -1,9 +1,5 @@
 #include "scheme_reducer.h"
 
-double StrategyWeights::getTotal() const {
-    return greedyIntersections + greedyAlternative + greedyRandom + weightedRandom + greedyPotential + mix;
-}
-
 SchemeReducer::SchemeReducer(int count, const std::string path, const StrategyWeights &strategyWeights, int seed) : uniformDistribution(0.0, 1.0) {
     this->count = count;
     this->path = path;
@@ -130,7 +126,7 @@ void SchemeReducer::reduceIteration(int iteration, double partialInitializationR
 
         for (int j = 0; j < 3; j++) {
             uvw[j][i].copyFrom(uvw[j][count]);
-            uvw[j][i].setStrategy(iteration == 1 && i == 0 ? Strategy::Greedy : selectStrategy(generator));
+            uvw[j][i].setStrategy(iteration == 1 && i == 0 ? Strategy::Greedy : strategyWeights.select(generator));
 
             if (uniformDistribution(generator) < partialInitializationRate && best[j].getFreshVars() > 0) {
                 std::uniform_int_distribution<int> varsDistribution(1, best[j].getFreshVars() * 3 / 4);
@@ -287,30 +283,6 @@ void SchemeReducer::save() const {
     f.close();
 
     std::cout << "Reduced scheme saved to \"" << path << "\"" << std::endl;
-}
-
-Strategy SchemeReducer::selectStrategy(std::mt19937 &generator) {
-    Strategy strategies[] = {
-        Strategy::GreedyAlternative, Strategy::GreedyRandom,  Strategy::WeightedRandom,
-        Strategy::GreedyIntersections, Strategy::GreedyPotential, Strategy::Mix
-    };
-
-    double weights[] = {
-        strategyWeights.greedyAlternative, strategyWeights.greedyRandom, strategyWeights.weightedRandom,
-        strategyWeights.greedyIntersections, strategyWeights.greedyPotential, strategyWeights.mix
-    };
-
-    double p = uniformDistribution(generator) * strategyWeights.getTotal();
-    double sum = 0;
-
-    for (int i = 0; i < 6; i++) {
-        sum += weights[i];
-
-        if (p <= sum && weights[i] > 0)
-            return strategies[i];
-    }
-
-    return strategies[5];
 }
 
 std::string SchemeReducer::getSavePath() const {

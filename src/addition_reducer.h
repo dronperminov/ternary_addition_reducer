@@ -20,6 +20,21 @@ enum class Strategy {
     Mix
 };
 
+struct StrategyWeights {
+    double greedyAlternative;
+    double greedyRandom;
+    double weightedRandom;
+    double greedyIntersections;
+    double greedyPotential;
+    double mix;
+
+    StrategyWeights();
+    Strategy select(std::mt19937 &generator);
+    double getTotal() const;
+private:
+    std::uniform_real_distribution<double> uniformDistribution;
+};
+
 struct PairHash {
     template <class T1, class T2>
     std::size_t operator() (const std::pair<T1, T2>& p) const {
@@ -35,9 +50,9 @@ class AdditionReducer {
     int naiveAdditions;
     int maxCount;
     Strategy strategy;
+    StrategyWeights strategyWeights;
     double scale;
     double alpha;
-    double beta;
 
     std::vector<std::unordered_set<int>> expressions;
     std::vector<std::pair<int,int>> freshVariables;
@@ -74,6 +89,6 @@ private:
     std::pair<int, int> selectSubexpressionWeightedRandom(std::mt19937 &generator);
     std::pair<int, int> selectSubexpressionGreedyPotential(std::mt19937 &generator);
 
-    Strategy getStepStrategy(std::mt19937 &generator) const;
+    Strategy getStepStrategy(std::mt19937 &generator);
     bool isIntersects(const std::pair<int, int> pair1, const std::pair<int, int> &pair2) const;
 };

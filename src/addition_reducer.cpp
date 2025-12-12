@@ -1,5 +1,48 @@
 #include "addition_reducer.h"
 
+StrategyWeights::StrategyWeights() : uniformDistribution(0.0, 1.0) {
+    greedyAlternative = 4;
+    greedyRandom = 2;
+    weightedRandom = 1;
+    greedyIntersections = 8;
+    greedyPotential = 0;
+    mix = 0;
+}
+
+double StrategyWeights::getTotal() const {
+    return greedyIntersections + greedyAlternative + greedyRandom + weightedRandom + greedyPotential + mix;
+}
+
+Strategy StrategyWeights::select(std::mt19937 &generator) {
+    Strategy strategies[] = {
+        Strategy::GreedyAlternative, Strategy::GreedyRandom, Strategy::WeightedRandom,
+        Strategy::GreedyIntersections, Strategy::GreedyPotential, Strategy::Mix
+    };
+
+    double weights[] = {
+        greedyAlternative, greedyRandom, weightedRandom,
+        greedyIntersections, greedyPotential, mix
+    };
+
+    double p = uniformDistribution(generator) * getTotal();
+    double sum = 0;
+    int last = 0;
+
+    for (int i = 0; i < 6; i++) {
+        if (weights[i] == 0)
+            continue;
+
+        sum += weights[i];
+        last = i;
+
+        if (p <= sum)
+            return strategies[i];
+    }
+
+    return strategies[last];
+}
+
+
 AdditionReducer::AdditionReducer() : uniformDistribution(0.0, 1.0), boolDistribution(0, 1) {
     realVariables = 0;
     naiveAdditions = 0;
@@ -7,7 +50,6 @@ AdditionReducer::AdditionReducer() : uniformDistribution(0.0, 1.0), boolDistribu
     strategy = Strategy::Greedy;
     scale = 0;
     alpha = 0;
-    beta = 0;
 }
 
 bool AdditionReducer::addExpression(const std::vector<int> &expression) {
@@ -39,7 +81,6 @@ void AdditionReducer::setStrategy(Strategy strategy) {
     this->strategy = strategy;
     this->scale = 0;
     this->alpha = 0;
-    this->beta = 0;
 }
 
 void AdditionReducer::partialInitialize(const AdditionReducer &reducer, size_t count) {
@@ -61,8 +102,7 @@ void AdditionReducer::copyFrom(const AdditionReducer &reducer) {
 
 void AdditionReducer::reduce(std::mt19937 &generator) {
     scale = uniformDistribution(generator) * 0.5;
-    alpha = -1 + uniformDistribution(generator) * 2;
-    beta = 0.5 + uniformDistribution(generator) * 0.5;
+    alpha = 0.5 + uniformDistribution(generator) * 0.5;
 
     while (updateSubexpressions()) {
         std::pair<int, int> subexpression = selectSubexpression(generator);
@@ -246,54 +286,34 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyRandom(std::mt1993
 }
 
 std::pair<int, int> AdditionReducer::selectSubexpressionGreedyIntersections(std::mt19937 &generator) {
-    std::vector<std::pair<int, int>> pairs;
-    pairs.reserve(subexpressions.size());
-
-    for (auto it = subexpressions.begin(); it != subexpressions.end(); it++)
-        if (it->second > 1)
-            pairs.push_back(it->first);
-
-    int size = pairs.size();
-    std::vector<bool> intersections(size * size, false);
-
-    for (int i = 0; i < size; i++) {
-        for (int j = i + 1; j < size; j++) {
-            bool intersects = isIntersects(pairs[i], pairs[j]);
-
-            if (boolDistribution(generator))
-                intersects = !intersects;
-
-            intersections[i * size + j] = intersects;
-            intersections[j * size + i] = intersects;
-        }
-    }
-
     double maxScore = 0;
-    int imax = 0;
+    std::pair<int, int> best = {0, 0};
 
-    for (int i = 0; i < size; i++) {
-        int overlapped = 0;
-        int other = 0;
+    for (auto it = subexpressions.begin(); it != subexpressions.end(); it++) {
+        if (it->second == 1)
+            continue;
 
-        for (int j = 0; j < size; j++) {
-            if (i == j)
+        double intScore = 0;
+
+        for (auto jt = subexpressions.begin(); jt != subexpressions.end(); jt++) {
+            if (it == jt || jt->second == 1)
                 continue;
 
-            if (intersections[i * size + j])
-                overlapped += subexpressions.at(pairs[j]) - 1;
+            if (isIntersects(it->first, jt->first) ^ boolDistribution(generator))
+                intScore += alpha * (jt->second - 1);
             else
-                other += subexpressions.at(pairs[j]) - 1;
+                intScore += (1 - alpha) * (jt->second - 1);
         }
 
-        double score = subexpressions.at(pairs[i]) - 1 + scale * (other + alpha + overlapped * beta);
+        double score = it->second - 1 + scale * intScore;
 
         if (score > maxScore) {
             maxScore = score;
-            imax = i;
+            best = it->first;
         }
     }
 
-    return pairs[imax];
+    return best;
 }
 
 std::pair<int, int> AdditionReducer::selectSubexpressionGreedyPotential(std::mt19937 &generator) {
@@ -399,17 +419,11 @@ void AdditionReducer::replaceSubexpression(const std::pair<int, int> &subexpress
     freshVariables.push_back({i, j});
 }
 
-Strategy AdditionReducer::getStepStrategy(std::mt19937 &generator) const {
-    if (strategy != Strategy::Mix)
-        return strategy;
+Strategy AdditionReducer::getStepStrategy(std::mt19937 &generator) {
+    if (strategy == Strategy::Mix)
+        return strategyWeights.select(generator);
 
-    Strategy strategies[] = {
-        Strategy::Greedy, Strategy::GreedyAlternative, Strategy::GreedyRandom,
-        Strategy::WeightedRandom, Strategy::GreedyIntersections, Strategy::GreedyPotential
-    };
-
-    std::uniform_int_distribution<int> distribution(0, sizeof(strategies) / sizeof(Strategy) - 1);
-    return strategies[distribution(generator)];
+    return strategy;
 }
 
 bool AdditionReducer::isIntersects(const std::pair<int, int> pair1, const std::pair<int, int> &pair2) const {
