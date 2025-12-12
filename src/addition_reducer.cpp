@@ -199,9 +199,9 @@ void AdditionReducer::write(std::ostream &os, const std::string &name, const std
 bool AdditionReducer::updateSubexpressions() {
     subexpressions.clear();
 
-    for (size_t index = 0; index < expressions.size(); index++) {
-        for (auto it1 = expressions[index].begin(); it1 != expressions[index].end(); it1++) {
-            for (auto it2 = std::next(it1); it2 != expressions[index].end(); it2++) {
+    for (const auto& expression: expressions) {
+        for (auto it1 = expression.begin(); it1 != expression.end(); it1++) {
+            for (auto it2 = std::next(it1); it2 != expression.end(); it2++) {
                 int i = *it1;
                 int j = *it2;
                 canonizeSubexpression(i, j);
@@ -216,8 +216,8 @@ bool AdditionReducer::updateSubexpressions() {
     }
 
     maxCount = 0;
-    for (auto it = subexpressions.begin(); it != subexpressions.end(); it++)
-        maxCount = std::max(maxCount, it->second);
+    for (const auto &pair: subexpressions)
+        maxCount = std::max(maxCount, pair.second);
 
     return maxCount > 1;
 }
@@ -265,51 +265,46 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedy() {
 std::pair<int, int> AdditionReducer::selectSubexpressionGreedyAlternative(std::mt19937 &generator) {
     std::vector<std::pair<int, int>> top;
 
-    for (auto it = subexpressions.begin(); it != subexpressions.end(); it++)
-        if (it->second == maxCount)
-            top.push_back(it->first);
+    for (const auto& pair: subexpressions)
+        if (pair.second == maxCount)
+            top.push_back(pair.first);
 
     std::uniform_int_distribution<int> dist(0, top.size() - 1);
     return top[dist(generator)];
 }
 
 std::pair<int, int> AdditionReducer::selectSubexpressionGreedyRandom(std::mt19937 &generator) {
-    bool top = uniformDistribution(generator) < scale;
-    std::vector<std::pair<int, int>> pairs;
+    if (uniformDistribution(generator) < scale)
+        return selectSubexpressionGreedyAlternative(generator);
 
-    for (auto it = subexpressions.begin(); it != subexpressions.end(); it++)
-        if ((top && it->second == maxCount) || (!top && it->second > 1))
-            pairs.push_back(it->first);
-
-    std::uniform_int_distribution<int> dist(0, pairs.size() - 1);
-    return pairs[dist(generator)];
+    return selectSubexpressionWeightedRandom(generator);
 }
 
 std::pair<int, int> AdditionReducer::selectSubexpressionGreedyIntersections(std::mt19937 &generator) {
     double maxScore = 0;
     std::pair<int, int> best = {0, 0};
 
-    for (auto it = subexpressions.begin(); it != subexpressions.end(); it++) {
-        if (it->second == 1)
+    for (const auto& pair1: subexpressions) {
+        if (pair1.second == 1)
             continue;
 
         double intScore = 0;
 
-        for (auto jt = subexpressions.begin(); jt != subexpressions.end(); jt++) {
-            if (it == jt || jt->second == 1)
+        for (const auto &pair2: subexpressions) {
+            if (pair1 == pair2 || pair2.second == 1)
                 continue;
 
-            if (isIntersects(it->first, jt->first) ^ boolDistribution(generator))
-                intScore += alpha * (jt->second - 1);
+            if (isIntersects(pair1.first, pair2.first) ^ boolDistribution(generator))
+                intScore += alpha * (pair2.second - 1);
             else
-                intScore += (1 - alpha) * (jt->second - 1);
+                intScore += (1 - alpha) * (pair2.second - 1);
         }
 
-        double score = it->second - 1 + scale * intScore;
+        double score = pair1.second - 1 + scale * intScore;
 
         if (score > maxScore) {
             maxScore = score;
-            best = it->first;
+            best = pair1.first;
         }
     }
 
@@ -321,36 +316,36 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyPotential(std::mt1
     std::pair<int, int> best = {0, 0};
     int varIndex = realVariables + freshVariables.size() + 1;
 
-    for (auto it = subexpressions.begin(); it != subexpressions.end(); it++) {
-        if (it->second == 1)
+    for (const auto &pair: subexpressions) {
+        if (pair.second == 1)
             continue;
 
-        std::pair<int, int> pair = it->first;
-        int i = pair.first;
-        int j = pair.second;
+        std::pair<int, int> subexpression = pair.first;
+        int i = subexpression.first;
+        int j = subexpression.second;
 
         std::unordered_set<std::pair<int, int>, PairHash> potentialSubexpressions;
         int potential = 0;
 
-        for (size_t index = 0; index < expressions.size(); index++) {
-            auto end = expressions[index].end();
+        for (auto& expression: expressions) {
+            const auto end = expression.end();
             int sign = 0;
 
-            if (expressions[index].find(i) != end && expressions[index].find(j) != end) {
-                expressions[index].erase(i);
-                expressions[index].erase(j);
-                expressions[index].insert(varIndex);
+            if (expression.find(i) != end && expression.find(j) != end) {
+                expression.erase(i);
+                expression.erase(j);
+                expression.insert(varIndex);
                 sign = 1;
             }
-            else if (expressions[index].find(-i) != end && expressions[index].find(-j) != end) {
-                expressions[index].erase(-i);
-                expressions[index].erase(-j);
-                expressions[index].insert(-varIndex);
+            else if (expression.find(-i) != end && expression.find(-j) != end) {
+                expression.erase(-i);
+                expression.erase(-j);
+                expression.insert(-varIndex);
                 sign = -1;
             }
 
-            for (auto it1 = expressions[index].begin(); it1 != expressions[index].end(); it1++) {
-                for (auto it2 = std::next(it1); it2 != expressions[index].end(); it2++) {
+            for (auto it1 = expression.begin(); it1 != expression.end(); it1++) {
+                for (auto it2 = std::next(it1); it2 != expression.end(); it2++) {
                     int si = *it1;
                     int sj = *it2;
                     canonizeSubexpression(si, sj);
@@ -360,17 +355,17 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyPotential(std::mt1
             }
 
             if (sign) {
-                expressions[index].insert(i * sign);
-                expressions[index].insert(j * sign);
-                expressions[index].erase(varIndex * sign);
+                expression.insert(i * sign);
+                expression.insert(j * sign);
+                expression.erase(varIndex * sign);
             }
         }
 
-        double score = it->second - 1 + scale * (potential - potentialSubexpressions.size());
+        double score = pair.second - 1 + scale * (potential - potentialSubexpressions.size());
 
         if (score > maxScore) {
             maxScore = score;
-            best = pair;
+            best = subexpression;
         }
     }
 
@@ -379,21 +374,23 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyPotential(std::mt1
 
 std::pair<int, int> AdditionReducer::selectSubexpressionWeightedRandom(std::mt19937 &generator) {
     double total = 0;
+    for (const auto &pair: subexpressions)
+        total += pair.second - 1;
 
-    for (auto it = subexpressions.begin(); it != subexpressions.end(); it++)
-        total += it->second - 1;
-
-    std::uniform_real_distribution<double> uniform(0.0, 1.0);
-    double p = uniform(generator) * total;
+    double p = uniformDistribution(generator) * total;
     double sum = 0;
+    std::pair<int, int> last;
 
-    auto it = subexpressions.begin();
-    while (std::next(it) != subexpressions.end() && p > sum) {
-        sum += it->second - 1;
-        it++;
+    for (const auto& pair: subexpressions) {
+        sum += pair.second - 1;
+
+        if (p <= sum)
+            return pair.first;
+
+        last = pair.first;
     }
 
-    return it->first;
+    return last;
 }
 
 void AdditionReducer::replaceSubexpression(const std::pair<int, int> &subexpression) {
@@ -401,18 +398,21 @@ void AdditionReducer::replaceSubexpression(const std::pair<int, int> &subexpress
     int i = subexpression.first;
     int j = subexpression.second;
 
-    for (size_t index = 0; index < expressions.size(); index++) {
-        auto end = expressions[index].end();
+    for (auto& expression: expressions) {
+        if (expression.size() < 2)
+            continue;
 
-        if (expressions[index].find(i) != end && expressions[index].find(j) != end) {
-            expressions[index].erase(i);
-            expressions[index].erase(j);
-            expressions[index].insert(varIndex);
+        const auto end = expression.end();
+
+        if (expression.find(i) != end && expression.find(j) != end) {
+            expression.erase(i);
+            expression.erase(j);
+            expression.insert(varIndex);
         }
-        else if (expressions[index].find(-i) != end && expressions[index].find(-j) != end) {
-            expressions[index].erase(-i);
-            expressions[index].erase(-j);
-            expressions[index].insert(-varIndex);
+        else if (expression.find(-i) != end && expression.find(-j) != end) {
+            expression.erase(-i);
+            expression.erase(-j);
+            expression.insert(-varIndex);
         }
     }
 
