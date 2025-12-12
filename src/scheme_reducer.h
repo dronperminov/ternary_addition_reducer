@@ -21,6 +21,7 @@ class SchemeReducer {
 
     std::string path;
     std::vector<AdditionReducer> uvw[3];
+    AdditionReducer init[3];
     AdditionReducer best[3];
     StrategyWeights strategyWeights;
 
@@ -30,6 +31,7 @@ class SchemeReducer {
     std::vector<int> indices[3];
     std::vector<std::mt19937> generators;
 
+    int naiveAdditions;
     int reducedAdditions;
     int reducedFreshVars;
 

@@ -48,35 +48,35 @@ make -j$(nproc)
 The tool provides detailed iteration reports showing progress across three independent reducing tasks (`U`, `V`, `W`):
 
 ```
-+----------------------------------------------------------------------------------------------------------------------------------------+
-| Size: 4x7x8                          Reducers: 128                                                             Iteration: 307          |
-| Rank: 164                                                                                                      Elapsed: 01:10:25       |
-+====================================+====================================+====================================+=========================+
-|             Reducers U             |             Reducers V             |             Reducers W             |          Total          |
-+----------+-------+---------+-------+----------+-------+---------+-------+----------+-------+---------+-------+-------+---------+-------|
-| strategy | naive | reduced | fresh | strategy | naive | reduced | fresh | strategy | naive | reduced | fresh | naive | reduced | fresh |
-+----------+-------+---------+-------+----------+-------+---------+-------+----------+-------+---------+-------+-------+---------+-------+
-| gi (26)      446       158      88 | gi (43)      500       228     115 | ga           559       307     168 |  1505       693     371 | 
-| gi (5)       446       158      88 | gr (11)      500       228     117 | gi (22)      559       309     166 |  1505       695     371 | 
-| gi (30)      446       158      88 | ga           500       229     113 | gr (8)       559       309     166 |  1505       696     367 | 
-| gi (35)      446       158      88 | gi (48)      500       229     113 | wr           559       309     166 |  1505       696     367 | 
-| gi (24)      446       158      88 | gi (13)      500       230     110 | wr           559       309     166 |  1505       697     364 | 
-| ga           446       158      88 | gi (43)      500       230     112 | gi (8)       559       310     165 |  1505       698     365 | 
-| gi (9)       446       158      88 | ga           500       231     108 | gr (9)       559       311     164 |  1505       700     360 | 
-| gi (21)      446       158      88 | gi (38)      500       231     110 | ga           559       311     164 |  1505       700     362 | 
-| gi (2)       446       158      88 | gr (48)      500       231     113 | gi (16)      559       311     164 |  1505       700     365 | 
-| ga           446       158      88 | gi (42)      500       231     115 | ga           559       311     164 |  1505       700     367 | 
-+------------------------------------+------------------------------------+------------------------------------+-------------------------+
-- iteration time (last / min / max / mean): 10.647 / 6.262 / 00:01:30 / 13.761
-- best additions (U / V / W / total): 158 / 227 / 305 / 690
-- best fresh vars (U / V / W / total): 88 / 117 / 170 / 375
-- best strategies (U / V / W): gi (42) / gr (13) / gp (0)
++--------------------------------------------------------------------------------------------------------+
+| Size: 4x7x8                  Reducers count: 32                                          Iteration: 42 |
+| Rank: 164                    Naive additions: 1505                                   Elapsed: 00:02:34 |
++============================+============================+============================+=================+
+|         Reducers U         |         Reducers V         |         Reducers W         |      Total      |
++----------+---------+-------+----------+---------+-------+----------+---------+-------+---------+-------+
+| strategy | reduced | fresh | strategy | reduced | fresh | strategy | reduced | fresh | reduced | fresh |
++----------+---------+-------+----------+---------+-------+----------+---------+-------+---------+-------+
+| gr (32)        170      85 | gr (22)        238     115 | gi (32)        309     167 |     717     367 |
+| gi (45)        170      85 | ga             239     113 | wr             309     167 |     718     365 |
+| gi (12)        170      85 | gi (29)        244     110 | gi (29)        310     166 |     724     361 |
+| ga             171      84 | gi (43)        245      85 | mix            311     165 |     727     334 |
+| gi (22)        171      84 | gi (3)         245     114 | ga             312     164 |     728     362 |
+| ga             171      84 | ga             246      85 | ga             312     164 |     729     333 |
+| ga             171      84 | wr             246     117 | gi (34)        312     164 |     729     365 |
+| ga             172      83 | gi (12)        247      86 | gi (10)        313     163 |     732     332 |
+| gi (3)         172      83 | gi (20)        247     101 | gi (3)         314     162 |     733     346 |
+| gi (43)        172      83 | gi (6)         248      86 | gi (1)         316     162 |     736     331 |
++----------------------------+----------------------------+----------------------------+-----------------+
+- iteration time (last / min / max / mean): 3.131 / 2.287 / 5.184 / 3.576
+- best additions (U / V / W / total): 170 / 236 / 309 / 715
+- best fresh vars (U / V / W / total): 85 / 117 / 167 / 369
+- best strategies (U / V / W): gp (14) / gi (38) / gi (17)
 ```
 
 **Columns explained**:
 
-* `strategy`: optimization strategy used (see Strategies section below);
 * `naive`: number of additions in the original scheme;
+* `strategy`: optimization strategy used (see Strategies section below);
 * `reduced`: number of additions after optimization;
 * `fresh`: number of new variables introduced.
 
@@ -157,7 +157,7 @@ Hybrid strategy that:
 
 Balances exploitation (`greedy alternative`) with exploration (`weighted random`).
 
-### Greedy Potential (`gp`)
+### Greedy potential (`gp`)
 Implementation based on the article ["The Number of the Beast: Reducing Additions in Fast Matrix Multiplication Algorithms for Dimensions up to 666"](https://eprint.iacr.org/2024/2063.pdf).
 For each candidate subexpression:
 
@@ -168,7 +168,7 @@ For each candidate subexpression:
 
 Complexity: `O(|expressions| × |variables|²)` - very effective but computationally expensive.
 
-### Greedy Intersections (`gi`)
+### Greedy intersections (`gi`)
 
 Improved version of `greedy potential` that accelerates the computation. Instead of performing actual replacements, it:
 
@@ -178,7 +178,7 @@ Improved version of `greedy potential` that accelerates the computation. Instead
 
 Complexity: `O(|variables|²)` - significantly faster than `greedy potential` while maintaining good quality.
 
-### Mix (mix)
+### Mix (`mix`)
 Dynamically switches between all available strategies according to configured weights, allowing the algorithm to adapt its approach based on what works best for the current state.
 
 
