@@ -11,4 +11,4 @@ ternary_addition_reducer: $(OBJECTS)
 	$(CXX) $(FLAGS) -c $< -o $@
 
 clean:
-	rm -f src/*.o
+	rm -f src/*.o ternary_addition_reducer

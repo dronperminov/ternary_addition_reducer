@@ -1,6 +1,8 @@
 #pragma once
 
 #include <iostream>
+#include <iomanip>
+#include <sstream>
 #include <vector>
 #include <string>
 #include <random>
@@ -8,14 +10,14 @@
 #include <unordered_set>
 #include <unordered_map>
 
-enum SelectSubexpressionMode {
-    GREEDY_MODE = 0,
-    GREEDY_ALTERNATIVE_MODE = 1,
-    GREEDY_RANDOM_MODE = 2,
-    GREEDY_INTERSECTIONS_MODE = 3,
-    WEIGHTED_RANDOM_MODE = 4,
-    GREEDY_POTENTIAL_MODE = 5,
-    MIX_MODE = 6
+enum class Strategy {
+    Greedy,
+    GreedyAlternative,
+    GreedyRandom,
+    WeightedRandom,
+    GreedyIntersections,
+    GreedyPotential,
+    Mix
 };
 
 struct PairHash {
@@ -32,7 +34,7 @@ class AdditionReducer {
     int realVariables;
     int naiveAdditions;
     int maxCount;
-    int mode;
+    Strategy strategy;
     double scale;
     double alpha;
     double beta;
@@ -43,12 +45,11 @@ class AdditionReducer {
 
     std::uniform_real_distribution<double> uniformDistribution;
     std::uniform_int_distribution<int> boolDistribution;
-    std::uniform_int_distribution<int> modeDistribution;
 public:
     AdditionReducer();
 
     bool addExpression(const std::vector<int> &expression);
-    void setMode(int mode);
+    void setStrategy(Strategy strategy);
     void partialInitialize(const AdditionReducer &reducer, size_t count);
 
     void copyFrom(const AdditionReducer &reducer);
@@ -58,11 +59,11 @@ public:
     int getNaiveAdditions() const;
     int getAdditions() const;
     int getFreshVars() const;
-    std::string getMode() const;
+    std::string getStrategy() const;
 private:
     bool updateSubexpressions();
     void canonizeSubexpression(int &i, int &j) const;
-    std::pair<int, int> selectSubexpression(int mode, std::mt19937 &generator);
+    std::pair<int, int> selectSubexpression(std::mt19937 &generator);
     void replaceSubexpression(const std::pair<int, int> &subexpression);
     void evaluatePotentialParams();
 
@@ -73,5 +74,6 @@ private:
     std::pair<int, int> selectSubexpressionWeightedRandom(std::mt19937 &generator);
     std::pair<int, int> selectSubexpressionGreedyPotential(std::mt19937 &generator);
 
+    Strategy getStepStrategy(std::mt19937 &generator) const;
     bool isIntersects(const std::pair<int, int> pair1, const std::pair<int, int> &pair2) const;
 };

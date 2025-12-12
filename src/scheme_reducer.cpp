@@ -1,8 +1,13 @@
 #include "scheme_reducer.h"
 
-SchemeReducer::SchemeReducer(int count, const std::string path, int seed) : uniformDistribution(0.0, 1.0) {
+double StrategyWeights::getTotal() const {
+    return greedyIntersections + greedyAlternative + greedyRandom + weightedRandom + greedyPotential + mix;
+}
+
+SchemeReducer::SchemeReducer(int count, const std::string path, const StrategyWeights &strategyWeights, int seed) : uniformDistribution(0.0, 1.0) {
     this->count = count;
     this->path = path;
+    this->strategyWeights = strategyWeights;
 
     for (int i = 0; i < 3; i++) {
         uvw[i] = std::vector<AdditionReducer>(count + 1);
@@ -38,6 +43,7 @@ bool SchemeReducer::initialize(std::istream &is) {
     for (int i = 0; i < 3; i++) {
         best[i].copyFrom(uvw[i][count]);
         bestAdditions[i] = best[i].getNaiveAdditions();
+        bestStrategies[i] = best[i].getStrategy();
         bestFreshVars[i] = 0;
     }
 
@@ -52,7 +58,7 @@ bool SchemeReducer::initialize(std::istream &is) {
     return true;
 }
 
-void SchemeReducer::reduce(const StrategyWeights &weights, int maxNoImprovements, int startAdditions, double partialInitializationRate, int topCount) {
+void SchemeReducer::reduce(int maxNoImprovements, int startAdditions, double partialInitializationRate, int topCount) {
     int noImprovements = 0;
 
     auto startTime = std::chrono::high_resolution_clock::now();
@@ -61,7 +67,7 @@ void SchemeReducer::reduce(const StrategyWeights &weights, int maxNoImprovements
 
     for (int iteration = 1; noImprovements < maxNoImprovements; iteration++) {
         auto t1 = std::chrono::high_resolution_clock::now();
-        reduceIteration(weights, partialInitializationRate);
+        reduceIteration(iteration, partialInitializationRate);
         bool improved = update(startAdditions, topCount);
         auto t2 = std::chrono::high_resolution_clock::now();
 
@@ -117,23 +123,26 @@ bool SchemeReducer::parseScheme(const Scheme &scheme) {
     return true;
 }
 
-void SchemeReducer::reduceIteration(const StrategyWeights &weights, double partialInitializationRate) {
+void SchemeReducer::reduceIteration(int iteration, double partialInitializationRate) {
     #pragma omp parallel for
     for (int i = 0; i < count; i++) {
         auto& generator = generators[omp_get_thread_num()];
 
         for (int j = 0; j < 3; j++) {
             uvw[j][i].copyFrom(uvw[j][count]);
-            uvw[j][i].setMode(selectStrategy(weights, generator));
+            uvw[j][i].setStrategy(iteration == 1 && i == 0 ? Strategy::Greedy : selectStrategy(generator));
 
             if (uniformDistribution(generator) < partialInitializationRate && best[j].getFreshVars() > 0) {
                 std::uniform_int_distribution<int> varsDistribution(1, best[j].getFreshVars() * 3 / 4);
                 uvw[j][i].partialInitialize(best[j], varsDistribution(generator));
             }
-
-            uvw[j][i].reduce(generator);
         }
     }
+
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i < count; i++)
+        for (int j = 0; j < 3; j++)
+            uvw[j][i].reduce(generators[omp_get_thread_num()]);
 }
 
 bool SchemeReducer::updateBest(int index, int topCount) {
@@ -150,10 +159,12 @@ bool SchemeReducer::updateBest(int index, int topCount) {
     int top = indices[index][0];
     int additions = uvw[index][top].getAdditions();
     int freshVars = uvw[index][top].getFreshVars();
+    std::string strategy = uvw[index][top].getStrategy();
 
     if (additions < bestAdditions[index] || (additions == bestAdditions[index] && freshVars < bestFreshVars[index])) {
         bestAdditions[index] = additions;
         bestFreshVars[index] = freshVars;
+        bestStrategies[index] = strategy;
         best[index].copyFrom(uvw[index][top]);
         return true;
     }
@@ -199,27 +210,27 @@ void SchemeReducer::report(std::chrono::high_resolution_clock::time_point startT
     std::string dimension = getDimension();
 
     std::cout << std::endl << std::left;
-    std::cout << "+----------------------------------------------------------------------------------------------------------------------------+" << std::endl;
+    std::cout << "+----------------------------------------------------------------------------------------------------------------------------------------+" << std::endl;
     std::cout << "| ";
-    std::cout << "Size: " << std::setw(24) << dimension << "   ";
-    std::cout << "Reducers: " << std::setw(20) << count << "   ";
-    std::cout << "                                 ";
+    std::cout << "Size: " << std::setw(28) << dimension << "   ";
+    std::cout << "Reducers: " << std::setw(24) << count << "   ";
+    std::cout << "                                     ";
     std::cout << "Iteration: " << std::setw(12) << iteration;
     std::cout << " |" << std::endl;
 
     std::cout << "| ";
-    std::cout << "Rank: " << std::setw(24) << rank << "   ";
-    std::cout << "                                 ";
-    std::cout << "                                 ";
+    std::cout << "Rank: " << std::setw(28) << rank << "   ";
+    std::cout << "                                     ";
+    std::cout << "                                     ";
     std::cout << "Elapsed: " << std::setw(14) << prettyTime(elapsed);
     std::cout << " |" << std::endl;
 
     std::cout << std::right;
-    std::cout << "+================================+================================+================================+=========================+" << std::endl;
-    std::cout << "|           Reducers U           |           Reducers V           |           Reducers W           |          Total          |" << std::endl;
-    std::cout << "+------+-------+---------+-------+------+-------+---------+-------+------+-------+---------+-------+-------+---------+-------|" << std::endl;
-    std::cout << "| mode | naive | reduced | fresh | mode | naive | reduced | fresh | mode | naive | reduced | fresh | naive | reduced | fresh |" << std::endl;
-    std::cout << "+------+-------+---------+-------+------+-------+---------+-------+------+-------+---------+-------+-------+---------+-------+" << std::endl;
+    std::cout << "+====================================+====================================+====================================+=========================+" << std::endl;
+    std::cout << "|             Reducers U             |             Reducers V             |             Reducers W             |          Total          |" << std::endl;
+    std::cout << "+----------+-------+---------+-------+----------+-------+---------+-------+----------+-------+---------+-------+-------+---------+-------|" << std::endl;
+    std::cout << "| strategy | naive | reduced | fresh | strategy | naive | reduced | fresh | strategy | naive | reduced | fresh | naive | reduced | fresh |" << std::endl;
+    std::cout << "+----------+-------+---------+-------+----------+-------+---------+-------+----------+-------+---------+-------+-------+---------+-------+" << std::endl;
 
     for (int i = 0; i < topCount && i < count; i++) {
         std::cout << "| ";
@@ -230,7 +241,7 @@ void SchemeReducer::report(std::chrono::high_resolution_clock::time_point startT
 
         for (int j = 0; j < 3; j++) {
             int index = indices[j][i];
-            std::string mode = uvw[j][index].getMode();
+            std::string strategy = uvw[j][index].getStrategy();
             int currNaive = uvw[j][index].getNaiveAdditions();
             int currReduced = uvw[j][index].getAdditions();
             int currFresh = uvw[j][index].getFreshVars();
@@ -239,17 +250,18 @@ void SchemeReducer::report(std::chrono::high_resolution_clock::time_point startT
             reduced += currReduced;
             fresh += currFresh;
 
-            std::cout << std::setw(4) << mode << "   " << std::setw(5) << currNaive << "   " << std::setw(7) << currReduced << "   " << std::setw(5) << currFresh << " | ";
+            std::cout << std::left << std::setw(8) << strategy << "   " << std::right << std::setw(5) << currNaive << "   " << std::setw(7) << currReduced << "   " << std::setw(5) << currFresh << " | ";
         }
 
         std::cout << std::setw(5) << naive << "   " << std::setw(7) << reduced << "   " << std::setw(5) << fresh << " | ";
         std::cout << std::endl;
     }
 
-    std::cout << "+--------------------------------+--------------------------------+--------------------------------+-------------------------+" << std::endl;
+    std::cout << "+------------------------------------+------------------------------------+------------------------------------+-------------------------+" << std::endl;
     std::cout << "- iteration time (last / min / max / mean): " << prettyTime(lastTime) << " / " << prettyTime(minTime) << " / " << prettyTime(maxTime) << " / " << prettyTime(meanTime) << std::endl;
     std::cout << "- best additions (U / V / W / total): " << bestAdditions[0] << " / " << bestAdditions[1] << " / " << bestAdditions[2] << " / " << reducedAdditions << std::endl;
     std::cout << "- best fresh vars (U / V / W / total): " << bestFreshVars[0] << " / " << bestFreshVars[1] << " / " << bestFreshVars[2] << " / " << reducedFreshVars << std::endl;
+    std::cout << "- best strategies (U / V / W): " << bestStrategies[0] << " / " << bestStrategies[1] << " / " << bestStrategies[2] << std::endl;
     std::cout << std::endl;
 }
 
@@ -277,22 +289,25 @@ void SchemeReducer::save() const {
     std::cout << "Reduced scheme saved to \"" << path << "\"" << std::endl;
 }
 
-SelectSubexpressionMode SchemeReducer::selectStrategy(const StrategyWeights &weights, std::mt19937 &generator) {
-    SelectSubexpressionMode strategies[6] = {GREEDY_INTERSECTIONS_MODE, GREEDY_ALTERNATIVE_MODE, GREEDY_RANDOM_MODE, WEIGHTED_RANDOM_MODE, GREEDY_POTENTIAL_MODE, MIX_MODE};
-    double weight[6] = {weights.greedyIntersections, weights.greedyAlternative, weights.greedyRandom, weights.weightedRandom, weights.greedyPotential, weights.mix};
+Strategy SchemeReducer::selectStrategy(std::mt19937 &generator) {
+    Strategy strategies[] = {
+        Strategy::GreedyAlternative, Strategy::GreedyRandom,  Strategy::WeightedRandom,
+        Strategy::GreedyIntersections, Strategy::GreedyPotential, Strategy::Mix
+    };
 
-    double total = 0;
-    for (int i = 0; i < 6; i++)
-        total += weight[i];
+    double weights[] = {
+        strategyWeights.greedyAlternative, strategyWeights.greedyRandom, strategyWeights.weightedRandom,
+        strategyWeights.greedyIntersections, strategyWeights.greedyPotential, strategyWeights.mix
+    };
 
-    double p = uniformDistribution(generator) * total;
+    double p = uniformDistribution(generator) * strategyWeights.getTotal();
     double sum = 0;
 
     for (int i = 0; i < 6; i++) {
-        if (p <= sum && weight[i] > 0)
-            return strategies[i];
+        sum += weights[i];
 
-        sum += weight[i];
+        if (p <= sum && weights[i] > 0)
+            return strategies[i];
     }
 
     return strategies[5];

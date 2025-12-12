@@ -1,12 +1,13 @@
 #include "addition_reducer.h"
 
-AdditionReducer::AdditionReducer() : uniformDistribution(0.0, 1.0), boolDistribution(0, 1), modeDistribution(0, MIX_MODE - 1) {
+AdditionReducer::AdditionReducer() : uniformDistribution(0.0, 1.0), boolDistribution(0, 1) {
     realVariables = 0;
     naiveAdditions = 0;
     maxCount = 0;
-    mode = GREEDY_MODE;
-    scale = -1;
-    alpha = -1;
+    strategy = Strategy::Greedy;
+    scale = 0;
+    alpha = 0;
+    beta = 0;
 }
 
 bool AdditionReducer::addExpression(const std::vector<int> &expression) {
@@ -34,11 +35,11 @@ bool AdditionReducer::addExpression(const std::vector<int> &expression) {
     return true;
 }
 
-void AdditionReducer::setMode(int mode) {
-    this->mode = mode;
-    this->scale = -1;
-    this->alpha = -1;
-    this->beta = -1;
+void AdditionReducer::setStrategy(Strategy strategy) {
+    this->strategy = strategy;
+    this->scale = 0;
+    this->alpha = 0;
+    this->beta = 0;
 }
 
 void AdditionReducer::partialInitialize(const AdditionReducer &reducer, size_t count) {
@@ -63,11 +64,8 @@ void AdditionReducer::reduce(std::mt19937 &generator) {
     alpha = -1 + uniformDistribution(generator) * 2;
     beta = 0.5 + uniformDistribution(generator) * 0.5;
 
-    std::uniform_int_distribution<int> modeDistribution(0, MIX_MODE - 1);
-
     while (updateSubexpressions()) {
-        int stepMode = mode == MIX_MODE ? modeDistribution(generator) : mode;
-        std::pair<int, int> subexpression = selectSubexpression(stepMode, generator);
+        std::pair<int, int> subexpression = selectSubexpression(generator);
         replaceSubexpression(subexpression);
     }
 }
@@ -89,26 +87,28 @@ int AdditionReducer::getFreshVars() const {
     return freshVariables.size();
 }
 
-std::string AdditionReducer::getMode() const {
-    if (mode == GREEDY_MODE)
+std::string AdditionReducer::getStrategy() const {
+    if (strategy == Strategy::Greedy)
         return "g";
 
-    if (mode == GREEDY_ALTERNATIVE_MODE)
+    if (strategy == Strategy::GreedyAlternative)
         return "ga";
 
-    if (mode == GREEDY_RANDOM_MODE)
-        return "gr" + std::to_string(int(scale * 100));
-
-    if (mode == GREEDY_INTERSECTIONS_MODE)
-        return "gi" + std::to_string(int(scale * 100));
-
-    if (mode == WEIGHTED_RANDOM_MODE)
+    if (strategy == Strategy::WeightedRandom)
         return "wr";
 
-    if (mode == GREEDY_POTENTIAL_MODE)
-        return "gp" + std::to_string(int(scale * 100));;
+    if (strategy == Strategy::Mix)
+        return "mix";
 
-    return "mix";
+    std::stringstream ss;
+    if (strategy == Strategy::GreedyRandom)
+        ss << "gr (" << int(scale * 100) << ")";
+    else if (strategy == Strategy::GreedyIntersections)
+        ss << "gi (" << int(scale * 100) << ")";
+    else if (strategy == Strategy::GreedyPotential)
+        ss << "gp (" << int(scale * 100) << ")";
+
+    return ss.str();
 }
 
 void AdditionReducer::write(std::ostream &os, const std::string &name, const std::string &indent) const {
@@ -192,23 +192,22 @@ void AdditionReducer::canonizeSubexpression(int &i, int &j) const {
     }
 }
 
-std::pair<int, int> AdditionReducer::selectSubexpression(int mode, std::mt19937 &generator) {
-    if (mode == GREEDY_MODE)
-        return selectSubexpressionGreedy();
+std::pair<int, int> AdditionReducer::selectSubexpression(std::mt19937 &generator) {
+    Strategy strategy = getStepStrategy(generator);
 
-    if (mode == GREEDY_ALTERNATIVE_MODE)
+    if (strategy == Strategy::GreedyAlternative)
         return selectSubexpressionGreedyAlternative(generator);
 
-    if (mode == GREEDY_RANDOM_MODE)
+    if (strategy == Strategy::GreedyRandom)
         return selectSubexpressionGreedyRandom(generator);
 
-    if (mode == GREEDY_INTERSECTIONS_MODE)
+    if (strategy == Strategy::GreedyIntersections)
         return selectSubexpressionGreedyIntersections(generator);
 
-    if (mode == WEIGHTED_RANDOM_MODE)
+    if (strategy == Strategy::WeightedRandom)
         return selectSubexpressionWeightedRandom(generator);
 
-    if (mode == GREEDY_POTENTIAL_MODE)
+    if (strategy == Strategy::GreedyPotential)
         return selectSubexpressionGreedyPotential(generator);
 
     return selectSubexpressionGreedy();
@@ -235,9 +234,7 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyAlternative(std::m
 }
 
 std::pair<int, int> AdditionReducer::selectSubexpressionGreedyRandom(std::mt19937 &generator) {
-    std::uniform_real_distribution<double> uniform(0.0, 0.5);
-    bool top = uniform(generator) < scale;
-
+    bool top = uniformDistribution(generator) < scale;
     std::vector<std::pair<int, int>> pairs;
 
     for (auto it = subexpressions.begin(); it != subexpressions.end(); it++)
@@ -379,7 +376,6 @@ std::pair<int, int> AdditionReducer::selectSubexpressionWeightedRandom(std::mt19
     return it->first;
 }
 
-
 void AdditionReducer::replaceSubexpression(const std::pair<int, int> &subexpression) {
     int varIndex = realVariables + freshVariables.size() + 1;
     int i = subexpression.first;
@@ -401,6 +397,19 @@ void AdditionReducer::replaceSubexpression(const std::pair<int, int> &subexpress
     }
 
     freshVariables.push_back({i, j});
+}
+
+Strategy AdditionReducer::getStepStrategy(std::mt19937 &generator) const {
+    if (strategy != Strategy::Mix)
+        return strategy;
+
+    Strategy strategies[] = {
+        Strategy::Greedy, Strategy::GreedyAlternative, Strategy::GreedyRandom,
+        Strategy::WeightedRandom, Strategy::GreedyIntersections, Strategy::GreedyPotential
+    };
+
+    std::uniform_int_distribution<int> distribution(0, sizeof(strategies) / sizeof(Strategy) - 1);
+    return strategies[distribution(generator)];
 }
 
 bool AdditionReducer::isIntersects(const std::pair<int, int> pair1, const std::pair<int, int> &pair2) const {
