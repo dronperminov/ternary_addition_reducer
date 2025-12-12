@@ -216,10 +216,16 @@ bool AdditionReducer::updateSubexpressions() {
     }
 
     maxCount = 0;
-    for (const auto &pair: subexpressions)
-        maxCount = std::max(maxCount, pair.second);
+    for (auto it = subexpressions.begin(); it != subexpressions.end(); ) {
+        if (it->second == 1) {
+            it = subexpressions.erase(it);
+        } else {
+            maxCount = std::max(maxCount, it->second);
+            it++;
+        }
+    }
 
-    return maxCount > 1;
+    return maxCount > 0;
 }
 
 void AdditionReducer::canonizeSubexpression(int &i, int &j) const {
@@ -285,13 +291,10 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyIntersections(std:
     std::pair<int, int> best = {0, 0};
 
     for (const auto& pair1: subexpressions) {
-        if (pair1.second == 1)
-            continue;
-
         double intScore = 0;
 
         for (const auto &pair2: subexpressions) {
-            if (pair1 == pair2 || pair2.second == 1)
+            if (pair1 == pair2)
                 continue;
 
             if (isIntersects(pair1.first, pair2.first) ^ boolDistribution(generator))
@@ -317,9 +320,6 @@ std::pair<int, int> AdditionReducer::selectSubexpressionGreedyPotential(std::mt1
     int varIndex = realVariables + freshVariables.size() + 1;
 
     for (const auto &pair: subexpressions) {
-        if (pair.second == 1)
-            continue;
-
         std::pair<int, int> subexpression = pair.first;
         int i = subexpression.first;
         int j = subexpression.second;
