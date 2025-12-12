@@ -1,6 +1,6 @@
 #include "scheme_reducer.h"
 
-SchemeReducer::SchemeReducer(int count, const std::string path, int seed) : uniformDistribution(0.0, 1.0), modeDistribution(0, modesCount - 1) {
+SchemeReducer::SchemeReducer(int count, const std::string path, int seed) : uniformDistribution(0.0, 1.0) {
     this->count = count;
     this->path = path;
 
@@ -52,7 +52,7 @@ bool SchemeReducer::initialize(std::istream &is) {
     return true;
 }
 
-void SchemeReducer::reduce(int maxNoImprovements, int startAdditions, double partialInitializationRate, int topCount) {
+void SchemeReducer::reduce(const StrategyWeights &weights, int maxNoImprovements, int startAdditions, double partialInitializationRate, int topCount) {
     int noImprovements = 0;
 
     auto startTime = std::chrono::high_resolution_clock::now();
@@ -61,7 +61,7 @@ void SchemeReducer::reduce(int maxNoImprovements, int startAdditions, double par
 
     for (int iteration = 1; noImprovements < maxNoImprovements; iteration++) {
         auto t1 = std::chrono::high_resolution_clock::now();
-        reduceIteration(partialInitializationRate);
+        reduceIteration(weights, partialInitializationRate);
         bool improved = update(startAdditions, topCount);
         auto t2 = std::chrono::high_resolution_clock::now();
 
@@ -117,14 +117,14 @@ bool SchemeReducer::parseScheme(const Scheme &scheme) {
     return true;
 }
 
-void SchemeReducer::reduceIteration(double partialInitializationRate) {
+void SchemeReducer::reduceIteration(const StrategyWeights &weights, double partialInitializationRate) {
     #pragma omp parallel for
     for (int i = 0; i < count; i++) {
         auto& generator = generators[omp_get_thread_num()];
 
         for (int j = 0; j < 3; j++) {
             uvw[j][i].copyFrom(uvw[j][count]);
-            uvw[j][i].setMode(modes[modeDistribution(generator)]);
+            uvw[j][i].setMode(selectStrategy(weights, generator));
 
             if (uniformDistribution(generator) < partialInitializationRate && best[j].getFreshVars() > 0) {
                 std::uniform_int_distribution<int> varsDistribution(1, best[j].getFreshVars() * 3 / 4);
@@ -277,6 +277,27 @@ void SchemeReducer::save() const {
     std::cout << "Reduced scheme saved to \"" << path << "\"" << std::endl;
 }
 
+SelectSubexpressionMode SchemeReducer::selectStrategy(const StrategyWeights &weights, std::mt19937 &generator) {
+    SelectSubexpressionMode strategies[6] = {GREEDY_INTERSECTIONS_MODE, GREEDY_ALTERNATIVE_MODE, GREEDY_RANDOM_MODE, WEIGHTED_RANDOM_MODE, GREEDY_POTENTIAL_MODE, MIX_MODE};
+    double weight[6] = {weights.greedyIntersections, weights.greedyAlternative, weights.greedyRandom, weights.weightedRandom, weights.greedyPotential, weights.mix};
+
+    double total = 0;
+    for (int i = 0; i < 6; i++)
+        total += weight[i];
+
+    double p = uniformDistribution(generator) * total;
+    double sum = 0;
+
+    for (int i = 0; i < 6; i++) {
+        if (p <= sum && weight[i] > 0)
+            return strategies[i];
+
+        sum += weight[i];
+    }
+
+    return strategies[5];
+}
+
 std::string SchemeReducer::getSavePath() const {
     std::stringstream ss;
     ss << path << "/";
@@ -297,7 +318,7 @@ std::string SchemeReducer::getDimension() const {
     return ss.str();
 }
 
-std::string SchemeReducer::prettyTime(double elapsed) {
+std::string SchemeReducer::prettyTime(double elapsed) const {
     std::stringstream ss;
 
     if (elapsed < 60) {

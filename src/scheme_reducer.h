@@ -14,16 +14,14 @@
 #include "scheme.h"
 #include "addition_reducer.h"
 
-const int modes[] = {
-    GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE, GREEDY_INTERSECTIONS_MODE,
-    GREEDY_ALTERNATIVE_MODE, GREEDY_ALTERNATIVE_MODE, GREEDY_ALTERNATIVE_MODE, GREEDY_ALTERNATIVE_MODE,
-    GREEDY_RANDOM_MODE, GREEDY_RANDOM_MODE,
-    WEIGHTED_RANDOM_MODE,
-    GREEDY_POTENTIAL_MODE,
-    MIX_MODE
+struct StrategyWeights {
+    double greedyIntersections;
+    double greedyAlternative;
+    double greedyRandom;
+    double weightedRandom;
+    double greedyPotential;
+    double mix;
 };
-
-const int modesCount = sizeof(modes) / sizeof(modes[0]);
 
 class SchemeReducer {
     int dimension[3];
@@ -43,21 +41,21 @@ class SchemeReducer {
     int reducedFreshVars;
 
     std::uniform_real_distribution<double> uniformDistribution;
-    std::uniform_int_distribution<int> modeDistribution;
 public:
     SchemeReducer(int count, const std::string path, int seed);
 
     bool initialize(std::istream &is);
-    void reduce(int maxNoImprovements, int startAdditions, double partialInitializationRate, int topCount = 10);
+    void reduce(const StrategyWeights &weights, int maxNoImprovements, int startAdditions, double partialInitializationRate, int topCount = 10);
 private:
     bool parseScheme(const Scheme &scheme);
-    void reduceIteration(double partialInitializationRate);
+    void reduceIteration(const StrategyWeights &weights, double partialInitializationRate);
     bool updateBest(int index, int topCount);
     bool update(int startAdditions, int topCount);
     void report(std::chrono::high_resolution_clock::time_point startTime, int iteration, const std::vector<double> &elapsedTimes, int topCount);
     void save() const;
 
+    SelectSubexpressionMode selectStrategy(const StrategyWeights &weights, std::mt19937 &generator);
     std::string getSavePath() const;
     std::string getDimension() const;
-    std::string prettyTime(double elapsed);
+    std::string prettyTime(double elapsed) const;
 };
