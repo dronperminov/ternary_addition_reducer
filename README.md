@@ -136,6 +136,24 @@ W coefficients
 The optimized schemes are saved in JSON format, which is fully compatible with the [FastMatrixMultiplication](https://github.com/dronperminov/FastMatrixMultiplication?tab=readme-ov-file#reduced-scheme-format) repository.
 This format allows for easy integration with other tools, verification of correctness, and further processing.
 
+
+## Algorithm Overview
+The core reduction algorithm follows this iterative process:
+
+### Step 1: Frequency Counting
+For all expressions in the current scheme, count frequencies of all possible subexpressions of the form `ai + aj` or `ai - aj`.
+This identifies common computational patterns that can be factored out.
+
+### Step 2: Subexpression Selection
+Using one of the strategies described below, select a candidate subexpression.
+
+### Step 3: Replacement
+Replace all occurrences of the selected subexpression with a fresh variable and update all affected expressions.
+
+### Step 4: Iteration
+Repeat steps 1-3 until no more profitable subexpressions exist (`frequency ≤ 1` for all pairs).
+
+
 ## Optimization strategies
 The tool employs seven different strategies:
 
@@ -147,13 +165,13 @@ Randomly selects from all subexpressions with the highest frequency. If only one
 Provides some randomness while maintaining focus on high-frequency candidates.
 
 ### Weighted random (`wr`)
-Selects subexpressions randomly with weights proportional to their profit, where profit = (frequency - 1). This gives higher probability to subexpressions that
+Selects subexpressions randomly with weights proportional to their profit, where `profit = (frequency - 1)`. This gives higher probability to subexpressions that
 appear more frequently, but allows exploration of lower-frequency options.
 
 ### Greedy random (`gr`)
 Hybrid strategy that:
-* With probability `p > 50%`: uses greedy alternative;
-* Otherwise: uses weighted random.
+* With probability `p > 50%`: uses `greedy alternative`;
+* Otherwise: uses `weighted random`.
 
 Balances exploitation (`greedy alternative`) with exploration (`weighted random`).
 
@@ -166,7 +184,7 @@ For each candidate subexpression:
 * Revert the replacement to maintain correctness;
 * Select subexpression with maximum: `profit + α × potential`.
 
-Complexity: `O(|expressions| × |variables|²)` - very effective but computationally expensive.
+Complexity: `O(|expressions| × |variables|⁴)` - very effective but computationally expensive.
 
 ### Greedy intersections (`gi`)
 
@@ -176,24 +194,11 @@ Improved version of `greedy potential` that accelerates the computation. Instead
 * Uses weighted coefficients based on how much subexpressions intersect;
 * Computes scores faster without temporary modifications.
 
-Complexity: `O(|variables|²)` - significantly faster than `greedy potential` while maintaining good quality.
+Complexity: `O(|variables|⁴)` - faster than `greedy potential` while maintaining good quality.
 
 ### Mix (`mix`)
-Dynamically switches between all available strategies according to configured weights, allowing the algorithm to adapt its approach based on what works best for the current state.
-
-
-## Algorithm Overview
-The core reduction algorithm follows this iterative process:
-
-### Step 1: Frequency Counting
-For all expressions in the current scheme, count frequencies of all possible subexpressions of the form `ai + aj` or `ai - aj`.
-This identifies common computational patterns that can be factored out.
-
-### Step 2: Subexpression Selection
-Using one of the strategies described above, select a candidate subexpression.
-
-### Step 3: Replacement
-Replace all occurrences of the selected subexpression with a fresh variable and update all affected expressions.
-
-### Step 4: Iteration
-Repeat steps 1-3 until no more profitable subexpressions exist (`frequency ≤ 1` for all pairs).
+Dynamically switches between strategies according to preconfigured weights:
+* `greedy alternative`: 4,
+* `greedy random`: 2,
+* `weighted random`: 1,
+* `greedy intersections`: 8.
