@@ -76,7 +76,7 @@ void SchemeReducer::reduce(int maxNoImprovements, int startAdditions, double par
         }
         else {
             noImprovements++;
-            std::cout << "No improvements for " << noImprovements << " iterations" << std::endl;
+            std::cout << "No improvements for " << noImprovements << " / " << maxNoImprovements << " iterations" << std::endl;
         }
     }
 }
