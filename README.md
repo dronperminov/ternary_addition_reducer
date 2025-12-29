@@ -1,5 +1,6 @@
 # ternary_addition_reducer
 
+[![arXiv:2512.13365](https://img.shields.io/badge/arXiv-2512.13365-b31b1b.svg)](https://arxiv.org/abs/2512.13365)
 
 ## Overview
 
@@ -202,3 +203,16 @@ Dynamically switches between strategies according to preconfigured weights:
 * `greedy random`: 2,
 * `weighted random`: 1,
 * `greedy intersections`: 8.
+
+## Citation
+If you use this software in your research, please cite:
+
+```bibtex
+@article{perminov2025parallel,
+    title={Parallel Heuristic Exploration for Additive Complexity Reduction in Fast Matrix Multiplication},
+    author={Perminov, Andrew I},
+    journal={arXiv preprint arXiv:2512.13365},
+    url={https://arxiv.org/abs/2512.13365},
+    year={2025}
+}
+```
